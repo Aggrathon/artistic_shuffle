@@ -1,22 +1,30 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{PathBuf, Component};
 use id3::Tag;
 use rand::prelude::SliceRandom;
 use rand::seq::index::sample;
 
-pub struct FileTree {
+pub struct FileMap {
     tree : HashMap<String, Vec<PathBuf>>
 }
 
-impl FileTree {
-    pub fn new() -> FileTree {
-        FileTree { tree: HashMap::new() }
+impl FileMap {
+    pub fn new() -> FileMap {
+        FileMap { tree: HashMap::new() }
     }
     pub fn add_file(&mut self, file: PathBuf) {
         match Tag::read_from_path(&file) {
-            Err(_) => {},
+            Err(_) => {
+                let band = root_named_dir(&file);
+                self.add(file, band)
+            },
             Ok(tag) => {
-                self.add(file, String::from(tag.artist().unwrap_or("")))
+                let band = if let Some(name) = tag.artist() {
+                    String::from(name)
+                } else {
+                    root_named_dir(&file)
+                };
+                self.add(file, band)
             }
         }
     }
@@ -47,6 +55,52 @@ impl FileTree {
     }
 }
 
+fn root_named_dir(path: &PathBuf) -> String {
+    if let Some(parent) = path.parent() {
+        for dir in parent.components() {
+            if let Component::Normal(name) = dir {
+                if let Some(nstr) = name.to_str() {
+                    return String::from(nstr);
+                }
+            }
+        }
+    }
+    String::from("")
+}
+
 fn main() {
     println!("Hello, world!");
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_path_band() {
+        let mut files = FileMap::new();
+        files.add_file(PathBuf::from("a/b"));
+        dbg!(&files.tree);
+        assert!(files.tree.contains_key(&String::from("a")));
+    }
+
+    #[test]
+    fn test_shuffle() {
+        let mut files = FileMap::new();
+        files.add(PathBuf::from("a"), String::from("a"));
+        files.add(PathBuf::from("b"), String::from("a"));
+        files.add(PathBuf::from("c"), String::from("b"));
+        files.add(PathBuf::from("d"), String::from("b"));
+
+        let shuff = files.shuffle();
+
+        assert!(shuff.contains(&&PathBuf::from("a")));
+        assert!(shuff.contains(&&PathBuf::from("b")));
+        assert!(shuff.contains(&&PathBuf::from("c")));
+        assert!(shuff.contains(&&PathBuf::from("d")));
+
+        assert!(shuff[..2].contains(&&PathBuf::from("a")) || shuff[..2].contains(&&PathBuf::from("b")));
+        assert!(shuff[..2].contains(&&PathBuf::from("c")) || shuff[..2].contains(&&PathBuf::from("d")));
+    }
 }

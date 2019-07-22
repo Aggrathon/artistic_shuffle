@@ -3,6 +3,7 @@ use std::path::{PathBuf, Component};
 use id3::Tag;
 use rand::prelude::SliceRandom;
 use rand::seq::index::sample;
+use path_abs::PathAbs;
 
 pub struct FileMap {
     tree : HashMap<String, Vec<PathBuf>>

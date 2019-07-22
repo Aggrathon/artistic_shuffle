@@ -3,7 +3,7 @@ use std::path::{PathBuf, Component};
 use id3::Tag;
 use rand::prelude::SliceRandom;
 use rand::seq::index::sample;
-use path_abs::PathAbs;
+use pathdiff::diff_paths;
 
 pub struct FileMap {
     tree : HashMap<String, Vec<PathBuf>>
@@ -28,6 +28,26 @@ impl FileMap {
                 self.add(file, band)
             }
         }
+    }
+    pub fn add_relative(&mut self, file: PathBuf, path: PathBuf) {
+        let band = match Tag::read_from_path(&file) {
+            Err(_) => {
+                match diff_paths(&file, &path) {
+                    Some(p) => root_named_dir(&p),
+                    None => String::from("")
+                }
+            },
+            Ok(tag) => {
+                match tag.artist() {
+                    Some(name) => String::from(name),
+                    None => match diff_paths(&file, &path) {
+                        Some(p) => root_named_dir(&p),
+                        None => String::from("")
+                    }
+                }
+            }
+        };
+        self.add(file, band)
     }
     pub fn add(&mut self, file: PathBuf, band: String) {
         match self.tree.get_mut(&band) {
@@ -82,8 +102,10 @@ mod tests {
     fn test_path_band() {
         let mut files = FileMap::new();
         files.add_file(PathBuf::from("a/b"));
+        files.add_relative(PathBuf::from("d/e/f"), PathBuf::from("d"));
         dbg!(&files.tree);
         assert!(files.tree.contains_key(&String::from("a")));
+        assert!(files.tree.contains_key(&String::from("e")));
     }
 
     #[test]

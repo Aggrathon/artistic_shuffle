@@ -1,5 +1,5 @@
 [package]
-name = "artistic_shufle"
+name = "artistic_shuffle"
 version = "0.1.0"
 authors = ["Aggrathon <antonbjo@gmail.com>"]
 edition = "2018"

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::{PathBuf, Component};
+use std::env::args;
 use id3::Tag;
 use rand::prelude::SliceRandom;
 use rand::seq::index::sample;
@@ -12,6 +13,12 @@ pub struct FileMap {
 impl FileMap {
     pub fn new() -> FileMap {
         FileMap { tree: HashMap::new() }
+    }
+    pub fn add(&mut self, file: PathBuf, band: String) {
+        match self.tree.get_mut(&band) {
+            Some(list) => { list.push(file); },
+            None => { self.tree.insert(band, vec!(file)); }
+        }
     }
     pub fn add_file(&mut self, file: PathBuf) {
         match Tag::read_from_path(&file) {
@@ -29,7 +36,7 @@ impl FileMap {
             }
         }
     }
-    pub fn add_relative(&mut self, file: PathBuf, path: PathBuf) {
+    pub fn add_relative(&mut self, file: PathBuf, path: &PathBuf) {
         let band = match Tag::read_from_path(&file) {
             Err(_) => {
                 match diff_paths(&file, &path) {
@@ -49,11 +56,32 @@ impl FileMap {
         };
         self.add(file, band)
     }
-    pub fn add(&mut self, file: PathBuf, band: String) {
-        match self.tree.get_mut(&band) {
-            Some(list) => { list.push(file); },
-            None => { self.tree.insert(band, vec!(file)); }
-        }
+    pub fn read_dir(&mut self, dir: PathBuf) {
+        if !dir.exists() || !dir.is_dir() { return; }
+        let mut stack: Vec<PathBuf> = vec!();
+        stack.push(PathBuf::from(&dir));
+        while let Some(d) = stack.pop() {
+            match d.read_dir() {
+                Err(e) => println!("{}", e),
+                Ok(iter) => {
+                    iter.for_each(|entry| {
+                        match entry {
+                            Err(e) => println!("{}", e),
+                            Ok(item) => {
+                                if !item.file_name().to_string_lossy().starts_with(".") {
+                                    let p: PathBuf = item.path();
+                                    if p.is_dir() {
+                                        stack.push(p);
+                                    } else {
+                                        self.add_relative(p, &dir);
+                                    }
+                                }
+                            }
+                        }
+                    })
+                }
+            }
+        };
     }
     pub fn shuffle(&self) -> Vec<&PathBuf> {
         let mut list : Vec<&PathBuf> = vec!();
@@ -89,8 +117,54 @@ fn root_named_dir(path: &PathBuf) -> String {
     String::from("")
 }
 
+#[derive(PartialEq,Eq)]
+enum State {
+    Init,
+    Input,
+    Middle,
+    Output
+}
+
 fn main() {
-    println!("Hello, world!");
+    let mut files = FileMap::new();
+    let mut state: State = State::Init;
+    let mut iter = args();
+    iter.next();
+    while let Some(a) = iter.next() {
+        match state {
+            State::Init | State::Input => {
+                if a == "--" {
+                    state = State::Middle;
+                    if state == State::Init { files.read_dir(PathBuf::from(".")); }
+                } else {
+                    files.read_dir(PathBuf::from(a));
+                    state = State::Input;
+                }
+            },
+            State::Middle | State::Output => {
+                state = State::Output;
+                println!("TODO: write to file");
+            }
+        }
+    }
+    match state {
+        State::Middle => {
+            for f in files.shuffle() {
+                println!("{}", f.to_string_lossy());
+            }
+        },
+        State::Input | State::Init => {
+            help();
+        },
+        _ => {}
+    }
+}
+
+fn help() {
+    let exe = args().next().unwrap_or(String::from("cargo run"));
+    println!("Usage:\n  {} INPUTS -- OUTPUTS", &exe);
+    println!("\nWhere:\n  INPUTS   are directiories (\".\" if empty)\n  OUTPUTS  are files (output to terminal if empty)");
+    println!("\nExample:\n  {} ~/Music -- playlist.m3u", &exe);
 }
 
 
@@ -102,7 +176,7 @@ mod tests {
     fn test_path_band() {
         let mut files = FileMap::new();
         files.add_file(PathBuf::from("a/b"));
-        files.add_relative(PathBuf::from("d/e/f"), PathBuf::from("d"));
+        files.add_relative(PathBuf::from("d/e/f"), &PathBuf::from("d"));
         dbg!(&files.tree);
         assert!(files.tree.contains_key(&String::from("a")));
         assert!(files.tree.contains_key(&String::from("e")));
@@ -125,5 +199,12 @@ mod tests {
 
         assert!(shuff[..2].contains(&&PathBuf::from("a")) || shuff[..2].contains(&&PathBuf::from("b")));
         assert!(shuff[..2].contains(&&PathBuf::from("c")) || shuff[..2].contains(&&PathBuf::from("d")));
+    }
+
+
+    #[test]
+    fn test_dir() {
+        let mut files = FileMap::new();
+        files.read_dir(PathBuf::from("."));
     }
 }

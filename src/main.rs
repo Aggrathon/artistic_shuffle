@@ -138,6 +138,7 @@ fn main() {
                     if state == State::Init { files.read_dir(PathBuf::from(".")); }
                 } else {
                     files.read_dir(PathBuf::from(a));
+                    //TODO: Read from file
                     state = State::Input;
                 }
             },
@@ -162,9 +163,12 @@ fn main() {
 
 fn help() {
     let exe = args().next().unwrap_or(String::from("cargo run"));
-    println!("Usage:\n  {} INPUTS -- OUTPUTS", &exe);
-    println!("\nWhere:\n  INPUTS   are directiories (\".\" if empty)\n  OUTPUTS  are files (output to terminal if empty)");
-    println!("\nExample:\n  {} ~/Music -- playlist.m3u", &exe);
+    println!("Description:\n  TODO: Description");
+    println!("\nUsage:\n  {} INPUTS -- OUTPUTS", &exe);
+    println!("\nArguments:");
+    println!("  INPUTS   are directiories or .m3u/.csv/.txt files (\".\" if empty)");
+    println!("  OUTPUTS  are files (output to terminal if empty)");
+    println!("\nExamples:\n  {} ~/Music -- playlist.m3u\n  {} playlist1.m3u playlist2.m3u -- shuffled.m3u", &exe, &exe);
 }
 
 

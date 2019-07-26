@@ -1,6 +1,8 @@
 use std::collections::HashMap;
-use std::path::{PathBuf, Component};
+use std::path::{PathBuf, Component, Path};
 use std::env::args;
+use std::fs::{create_dir_all, File};
+use std::io::Write;
 use id3::Tag;
 use rand::prelude::SliceRandom;
 use rand::seq::index::sample;
@@ -144,7 +146,22 @@ fn main() {
             },
             State::Middle | State::Output => {
                 state = State::Output;
-                println!("TODO: write to file");
+                let path = PathBuf::from(a);
+                create_dir_all(path.parent().unwrap_or(Path::new("."))).unwrap_or_default();
+                match File::create(&path) {
+                    Err(e) => println!("{}", e),
+                    Ok(mut file) => {
+                        let parent = path.canonicalize().expect("Could not canon").parent().unwrap_or(Path::new(".")).to_path_buf();
+                        for f in files.shuffle() {
+                            if let Some(rel) = diff_paths(&f, &parent) {
+                                match write!(file, "{}\n", rel.to_string_lossy()) {
+                                    Err(e) => println!("{}", e),
+                                    Ok(_) => {}
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

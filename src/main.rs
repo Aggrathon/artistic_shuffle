@@ -147,18 +147,24 @@ fn main() {
             State::Middle | State::Output => {
                 state = State::Output;
                 let path = PathBuf::from(a);
-                create_dir_all(path.parent().unwrap_or(Path::new("."))).unwrap_or_default();
+                let parent = if path.is_relative() {
+                    path.parent().unwrap_or(Path::new(".")).to_path_buf()
+                } else {
+                    path.parent().unwrap_or(path.ancestors().last().unwrap()).to_path_buf()
+                };
+                create_dir_all(&parent).unwrap_or_default();
                 match File::create(&path) {
                     Err(e) => println!("{}", e),
                     Ok(mut file) => {
-                        let parent = path.canonicalize().expect("Could not canon").parent().unwrap_or(Path::new(".")).to_path_buf();
                         for f in files.shuffle() {
-                            if let Some(rel) = diff_paths(&f, &parent) {
-                                match write!(file, "{}\n", rel.to_string_lossy()) {
-                                    Err(e) => println!("{}", e),
-                                    Ok(_) => {}
-                                }
-                            }
+                            if f.is_absolute() {
+                                write!(file, "{}\n", f.to_string_lossy()).expect("Could not write to file");
+                            } else { 
+                                match diff_paths(&f, &parent) {
+                                    Some(f) => write!(file, "{}\n", f.to_string_lossy()).expect("Could not write to file"),
+                                    None => write!(file, "{}\n", f.to_string_lossy()).expect("Could not write to file")
+                                };
+                            };
                         }
                     }
                 }
@@ -181,6 +187,7 @@ fn main() {
 fn help() {
     let exe = args().next().unwrap_or(String::from("cargo run"));
     println!("Description:\n  TODO: Description");
+    println!("  The output paths will be global/local depending on the input");
     println!("\nUsage:\n  {} INPUTS -- OUTPUTS", &exe);
     println!("\nArguments:");
     println!("  INPUTS   are directiories or .m3u/.csv/.txt files (\".\" if empty)");

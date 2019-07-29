@@ -230,8 +230,8 @@ fn help() {
     let exe = args().next().unwrap_or(String::from("cargo run --"));
     println!("Description:");
     println!("  Create a shuffled playlist where songs from the same artist are spread out");
-    println!("  The artist names are taken from the artist ID3-tag.");
-    println!("  If the tag is missing then the artist is based on the filename (first directory not in the base path).");
+    println!("  The artist names are taken from the files' ID3-tags.");
+    println!("  If a tag is missing then the artist is based on the filename (first directory not in the base path).");
     println!("  The output paths will be global/local depending on the input paths.");
     println!("\nUsage:\n  {} INPUTS -- OUTPUTS", &exe);
     println!("\nArguments:");

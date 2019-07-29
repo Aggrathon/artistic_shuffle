@@ -18,7 +18,6 @@ If the tag is missing then the artist is based on the filename (first directory 
 
 The output paths will be global/local depending on the input paths.
 
-
 ## Examples
 
 `artistic_shuffle ~/Music -- playlist.m3u`  

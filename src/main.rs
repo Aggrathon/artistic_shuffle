@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{PathBuf, Component, Path};
 use std::env::args;
 use std::fs::{create_dir_all, File};
-use std::io::Write;
+use std::io::{Write, BufReader, BufRead};
 use id3::Tag;
 use rand::prelude::SliceRandom;
 use rand::seq::index::sample;
@@ -23,67 +23,50 @@ impl FileMap {
         }
     }
     pub fn add_file(&mut self, file: PathBuf) {
-        match Tag::read_from_path(&file) {
-            Err(_) => {
-                let band = root_named_dir(&file);
-                self.add(file, band)
-            },
-            Ok(tag) => {
-                let band = if let Some(name) = tag.artist() {
-                    String::from(name)
-                } else {
-                    root_named_dir(&file)
-                };
-                self.add(file, band)
-            }
-        }
+        let band = get_artist(&file);
+        self.add(file, band);
     }
-    pub fn add_relative(&mut self, file: PathBuf, path: &PathBuf) {
-        let band = match Tag::read_from_path(&file) {
-            Err(_) => {
-                match diff_paths(&file, &path) {
-                    Some(p) => root_named_dir(&p),
-                    None => String::from("")
-                }
-            },
-            Ok(tag) => {
-                match tag.artist() {
-                    Some(name) => String::from(name),
-                    None => match diff_paths(&file, &path) {
-                        Some(p) => root_named_dir(&p),
-                        None => String::from("")
-                    }
-                }
-            }
-        };
-        self.add(file, band)
+    pub fn add_relative(&mut self, file: PathBuf, base: &PathBuf) {
+        let band = get_artist_relative(&file, &base);
+        self.add(file, band);
     }
     pub fn read_dir(&mut self, dir: PathBuf) {
         if !dir.exists() || !dir.is_dir() { return; }
         let mut stack: Vec<PathBuf> = vec!();
         stack.push(PathBuf::from(&dir));
         while let Some(d) = stack.pop() {
-            match d.read_dir() {
-                Err(e) => println!("{}", e),
-                Ok(iter) => {
-                    iter.for_each(|entry| {
-                        match entry {
-                            Err(e) => println!("{}", e),
-                            Ok(item) => {
-                                if !item.file_name().to_string_lossy().starts_with(".") {
-                                    let p: PathBuf = item.path();
-                                    if p.is_dir() {
-                                        stack.push(p);
-                                    } else {
-                                        self.add_relative(p, &dir);
-                                    }
-                                }
+            if let Ok(iter) = d.read_dir() {
+                iter.for_each(|entry| {
+                    if let Ok(item) = entry {
+                        if !item.file_name().to_string_lossy().starts_with(".") {
+                            let p: PathBuf = item.path();
+                            if p.is_dir() {
+                                stack.push(p);
+                            } else {
+                                self.add_relative(p, &dir);
                             }
                         }
-                    })
-                }
+                    }
+                })
             }
         };
+    }
+    pub fn read_file(&mut self, file: PathBuf) {
+        if !file.exists() || !file.is_file() { return; }
+        let parent = get_parent_dir(&file);
+        if let Ok(f) = File::open(&file) {
+            for l in BufReader::new(f).lines() {
+                if let Ok(line) = l {
+                    let path = PathBuf::from(line);
+                    if path.is_absolute() && file.is_absolute() {
+                        self.add_relative(path, &parent);
+                    } else {
+                        self.add(parent.join(&path), get_artist(&path));
+                    }
+                }
+            }
+        }
+
     }
     pub fn shuffle(&self) -> Vec<&PathBuf> {
         let mut list : Vec<&PathBuf> = vec!();
@@ -106,7 +89,32 @@ impl FileMap {
     }
 }
 
-fn root_named_dir(path: &PathBuf) -> String {
+
+fn get_artist(file: &PathBuf) -> String {
+    match Tag::read_from_path(&file) {
+        Err(_) => get_artist_from_path(&file),
+        Ok(tag) => {
+            match tag.artist() {
+                Some(name) => String::from(name),
+                None => get_artist_from_path(&file)
+            }
+        }
+    }
+}
+
+fn get_artist_relative(file: &PathBuf, base: &PathBuf) -> String {
+    if let Ok(tag) = Tag::read_from_path(&file) {
+        if let Some(name) = tag.artist() {
+            return String::from(name);
+        }
+    };
+    match diff_paths(&file, &base) {
+        Some(p) => get_artist_from_path(&p),
+        None => String::from("")
+    }
+}
+
+fn get_artist_from_path(path: &PathBuf) -> String {
     if let Some(parent) = path.parent() {
         for dir in parent.components() {
             if let Component::Normal(name) = dir {
@@ -117,6 +125,14 @@ fn root_named_dir(path: &PathBuf) -> String {
         }
     }
     String::from("")
+}
+
+fn get_parent_dir(path: &PathBuf) -> PathBuf {
+    if path.is_relative() {
+        path.parent().unwrap_or(Path::new(".")).to_path_buf()
+    } else {
+        path.parent().unwrap_or(path.ancestors().last().unwrap()).to_path_buf()
+    }
 }
 
 #[derive(PartialEq,Eq)]
@@ -139,19 +155,20 @@ fn main() {
                     state = State::Middle;
                     if state == State::Init { files.read_dir(PathBuf::from(".")); }
                 } else {
-                    files.read_dir(PathBuf::from(a));
-                    //TODO: Read from file
+                    let path = PathBuf::from(a);
+                    if path.exists() {
+                        if path.is_dir() { files.read_dir(path); }
+                        else if path.is_file() { files.read_file(path); }
+                    } else {
+                        eprintln!("Input path {} doesn't exist", path.to_string_lossy());
+                    }
                     state = State::Input;
                 }
             },
             State::Middle | State::Output => {
                 state = State::Output;
                 let path = PathBuf::from(a);
-                let parent = if path.is_relative() {
-                    path.parent().unwrap_or(Path::new(".")).to_path_buf()
-                } else {
-                    path.parent().unwrap_or(path.ancestors().last().unwrap()).to_path_buf()
-                };
+                let parent = get_parent_dir(&path);
                 create_dir_all(&parent).unwrap_or_default();
                 match File::create(&path) {
                     Err(e) => println!("{}", e),
@@ -186,8 +203,8 @@ fn main() {
 
 fn help() {
     let exe = args().next().unwrap_or(String::from("cargo run"));
-    println!("Description:\n  TODO: Description");
-    println!("  The output paths will be global/local depending on the input");
+    println!("Description:\n  Create a shuffled playlist where the artists are spread out. ");
+    println!("  The output paths will be global/local depending on the input.");
     println!("\nUsage:\n  {} INPUTS -- OUTPUTS", &exe);
     println!("\nArguments:");
     println!("  INPUTS   are directiories or .m3u/.csv/.txt files (\".\" if empty)");

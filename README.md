@@ -12,8 +12,8 @@ If the tag is missing then the artist is based on the filename (first directory 
 
 |Arguments:||
 |---|---|
-|INPUTS  | are directories or .m3u/.csv/.txt files ("." if empty) |
-|OUTPUTS | are files (output to terminal if empty) |
+|INPUTS  | directories ("." if empty) or .m3u/.csv/.txt files |
+|OUTPUTS | files (output to terminal if empty) |
 
 The output paths will be global/local depending on the input paths.
 

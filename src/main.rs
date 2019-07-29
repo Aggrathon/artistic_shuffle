@@ -226,12 +226,15 @@ fn main() {
 }
 
 fn help() {
-    let exe = args().next().unwrap_or(String::from("cargo run"));
-    println!("Description:\n  Create a shuffled playlist where the artists are spread out. ");
-    println!("  The output paths will be global/local depending on the input.");
+    let exe = args().next().unwrap_or(String::from("cargo run --"));
+    println!("Description:");
+    println!("  Create a shuffled playlist where songs from the same artist are spread out");
+    println!("  The artist names are taken from the artist ID3-tag.");
+    println!("  If the tag is missing then the artist is based on the filename (first directory not in the base path).");
+    println!("  The output paths will be global/local depending on the input paths.");
     println!("\nUsage:\n  {} INPUTS -- OUTPUTS", &exe);
     println!("\nArguments:");
-    println!("  INPUTS   are directiories or .m3u/.csv/.txt files (\".\" if empty)");
+    println!("  INPUTS   are directories or .m3u/.csv/.txt files (\".\" if empty)");
     println!("  OUTPUTS  are files (output to terminal if empty)");
     println!("\nExamples:\n  {} ~/Music -- playlist.m3u\n  {} playlist1.m3u playlist2.m3u -- shuffled.m3u", &exe, &exe);
 }

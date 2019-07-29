@@ -1,25 +1,31 @@
-use std::collections::HashMap;
-use std::path::{PathBuf, Component, Path};
-use std::env::args;
-use std::fs::{create_dir_all, File};
-use std::io::{Write, BufReader, BufRead};
 use id3::Tag;
+use pathdiff::diff_paths;
 use rand::prelude::SliceRandom;
 use rand::seq::index::sample;
-use pathdiff::diff_paths;
+use std::collections::HashMap;
+use std::env::args;
+use std::fs::{create_dir_all, File};
+use std::io::{BufRead, BufReader, Write};
+use std::path::{Component, Path, PathBuf};
 
 pub struct FileMap {
-    tree : HashMap<String, Vec<PathBuf>>
+    tree: HashMap<String, Vec<PathBuf>>,
 }
 
 impl FileMap {
     pub fn new() -> FileMap {
-        FileMap { tree: HashMap::new() }
+        FileMap {
+            tree: HashMap::new(),
+        }
     }
     pub fn add(&mut self, file: PathBuf, band: String) {
         match self.tree.get_mut(&band) {
-            Some(list) => { list.push(file); },
-            None => { self.tree.insert(band, vec!(file)); }
+            Some(list) => {
+                list.push(file);
+            }
+            None => {
+                self.tree.insert(band, vec![file]);
+            }
         }
     }
     pub fn add_file(&mut self, file: PathBuf) {
@@ -31,8 +37,10 @@ impl FileMap {
         self.add(file, band);
     }
     pub fn read_dir(&mut self, dir: PathBuf) {
-        if !dir.exists() || !dir.is_dir() { return; }
-        let mut stack: Vec<PathBuf> = vec!();
+        if !dir.exists() || !dir.is_dir() {
+            return;
+        }
+        let mut stack: Vec<PathBuf> = vec![];
         stack.push(PathBuf::from(&dir));
         while let Some(d) = stack.pop() {
             if let Ok(iter) = d.read_dir() {
@@ -49,10 +57,12 @@ impl FileMap {
                     }
                 })
             }
-        };
+        }
     }
     pub fn read_file(&mut self, file: PathBuf) {
-        if !file.exists() || !file.is_file() { return; }
+        if !file.exists() || !file.is_file() {
+            return;
+        }
         let parent = get_parent_dir(&file);
         if let Ok(f) = File::open(&file) {
             for l in BufReader::new(f).lines() {
@@ -66,39 +76,43 @@ impl FileMap {
                 }
             }
         }
-
     }
     pub fn shuffle(&self) -> Vec<&PathBuf> {
-        let mut list : Vec<&PathBuf> = vec!();
-        if self.tree.is_empty() { return list; }
-        let mut len : usize = 0;
+        let mut list: Vec<&PathBuf> = vec![];
+        if self.tree.is_empty() {
+            return list;
+        }
+        let mut len: usize = 0;
         let mut rng = rand::thread_rng();
         self.tree.iter().for_each(|(_, v)| {
-            if len < v.len() { len = v.len(); }
+            if len < v.len() {
+                len = v.len();
+            }
             let start = list.len();
             list.extend(v.iter());
             list[start..].shuffle(&mut rng);
         });
-        if list.is_empty() { return list; }
-        let mut list : Vec<&PathBuf> = sample(&mut rng, len, len).into_iter().flat_map(|i| {
-            list.iter().skip(i).step_by(len)
-        }).map(|p| *p).collect();
-        let stride : usize = (list.len()-1)/len/2+1;
+        if list.is_empty() {
+            return list;
+        }
+        let mut list: Vec<&PathBuf> = sample(&mut rng, len, len)
+            .into_iter()
+            .flat_map(|i| list.iter().skip(i).step_by(len))
+            .map(|p| *p)
+            .collect();
+        let stride: usize = (list.len() - 1) / len / 2 + 1;
         list.chunks_mut(stride).for_each(|c| c.shuffle(&mut rng));
         list
     }
 }
 
-
 fn get_artist(file: &PathBuf) -> String {
     match Tag::read_from_path(&file) {
         Err(_) => get_artist_from_path(&file),
-        Ok(tag) => {
-            match tag.artist() {
-                Some(name) => String::from(name),
-                None => get_artist_from_path(&file)
-            }
-        }
+        Ok(tag) => match tag.artist() {
+            Some(name) => String::from(name),
+            None => get_artist_from_path(&file),
+        },
     }
 }
 
@@ -110,7 +124,7 @@ fn get_artist_relative(file: &PathBuf, base: &PathBuf) -> String {
     };
     match diff_paths(&file, &base) {
         Some(p) => get_artist_from_path(&p),
-        None => String::from("")
+        None => String::from(""),
     }
 }
 
@@ -131,16 +145,18 @@ fn get_parent_dir(path: &PathBuf) -> PathBuf {
     if path.is_relative() {
         path.parent().unwrap_or(Path::new(".")).to_path_buf()
     } else {
-        path.parent().unwrap_or(path.ancestors().last().unwrap()).to_path_buf()
+        path.parent()
+            .unwrap_or(path.ancestors().last().unwrap())
+            .to_path_buf()
     }
 }
 
-#[derive(PartialEq,Eq)]
+#[derive(PartialEq, Eq)]
 enum State {
     Init,
     Input,
     Middle,
-    Output
+    Output,
 }
 
 fn main() {
@@ -153,18 +169,23 @@ fn main() {
             State::Init | State::Input => {
                 if a == "--" {
                     state = State::Middle;
-                    if state == State::Init { files.read_dir(PathBuf::from(".")); }
+                    if state == State::Init {
+                        files.read_dir(PathBuf::from("."));
+                    }
                 } else {
                     let path = PathBuf::from(a);
                     if path.exists() {
-                        if path.is_dir() { files.read_dir(path); }
-                        else if path.is_file() { files.read_file(path); }
+                        if path.is_dir() {
+                            files.read_dir(path);
+                        } else if path.is_file() {
+                            files.read_file(path);
+                        }
                     } else {
                         eprintln!("Input path {} doesn't exist", path.to_string_lossy());
                     }
                     state = State::Input;
                 }
-            },
+            }
             State::Middle | State::Output => {
                 state = State::Output;
                 let path = PathBuf::from(a);
@@ -175,11 +196,14 @@ fn main() {
                     Ok(mut file) => {
                         for f in files.shuffle() {
                             if f.is_absolute() {
-                                write!(file, "{}\n", f.to_string_lossy()).expect("Could not write to file");
-                            } else { 
+                                write!(file, "{}\n", f.to_string_lossy())
+                                    .expect("Could not write to file");
+                            } else {
                                 match diff_paths(&f, &parent) {
-                                    Some(f) => write!(file, "{}\n", f.to_string_lossy()).expect("Could not write to file"),
-                                    None => write!(file, "{}\n", f.to_string_lossy()).expect("Could not write to file")
+                                    Some(f) => write!(file, "{}\n", f.to_string_lossy())
+                                        .expect("Could not write to file"),
+                                    None => write!(file, "{}\n", f.to_string_lossy())
+                                        .expect("Could not write to file"),
                                 };
                             };
                         }
@@ -193,10 +217,10 @@ fn main() {
             for f in files.shuffle() {
                 println!("{}", f.to_string_lossy());
             }
-        },
+        }
         State::Input | State::Init => {
             help();
-        },
+        }
         _ => {}
     }
 }
@@ -211,7 +235,6 @@ fn help() {
     println!("  OUTPUTS  are files (output to terminal if empty)");
     println!("\nExamples:\n  {} ~/Music -- playlist.m3u\n  {} playlist1.m3u playlist2.m3u -- shuffled.m3u", &exe, &exe);
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -242,10 +265,13 @@ mod tests {
         assert!(shuff.contains(&&PathBuf::from("c")));
         assert!(shuff.contains(&&PathBuf::from("d")));
 
-        assert!(shuff[..2].contains(&&PathBuf::from("a")) || shuff[..2].contains(&&PathBuf::from("b")));
-        assert!(shuff[..2].contains(&&PathBuf::from("c")) || shuff[..2].contains(&&PathBuf::from("d")));
+        assert!(
+            shuff[..2].contains(&&PathBuf::from("a")) || shuff[..2].contains(&&PathBuf::from("b"))
+        );
+        assert!(
+            shuff[..2].contains(&&PathBuf::from("c")) || shuff[..2].contains(&&PathBuf::from("d"))
+        );
     }
-
 
     #[test]
     fn test_dir() {

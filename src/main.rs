@@ -165,6 +165,7 @@ fn main() {
     let mut iter = args();
     iter.next();
     while let Some(a) = iter.next() {
+        let a = a.trim();
         match state {
             State::Init | State::Input => {
                 if a == "--" {

@@ -1,7 +1,8 @@
 # Artistic Shuffle
 
 When shuffling a playlist the goal is seldom *randomness*, but rather *variety*.
-This program aims to provide an alternative shuffle where clusters with songs from the same artist are avoided (and vice versa a common artist should show up regularly throughout the playlist).
+This program aims to provide an alternative shuffle where clusters with songs from the
+same artist are avoided and where common artists show up regularly throughout the playlist.
 
 The artist names are taken from the *artist* ID3-tag.
 If the tag is missing then the artist is based on the filename (first directory not in the base path).

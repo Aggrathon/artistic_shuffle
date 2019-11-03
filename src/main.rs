@@ -100,7 +100,7 @@ impl FileMap {
             .flat_map(|i| list.iter().skip(i).step_by(len))
             .map(|p| *p)
             .collect();
-        let stride: usize = (list.len() - 1) / len / 2 + 1;
+        let stride: usize = (list.len() * 2 - 1) / (len * 5) + 1;
         list.chunks_mut(stride).for_each(|c| c.shuffle(&mut rng));
         list
     }

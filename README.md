@@ -30,4 +30,4 @@ The output paths will be global/local depending on the input paths.
 3. Run `cargo build --release`
 4. The executable can be found in `target/release`
 
-Alternatively you can find some prebuilt binaries in [releases](/releases).
+Alternatively you can find some prebuilt binaries in [releases](https://github.com/Aggrathon/artistic_shuffle/releases).

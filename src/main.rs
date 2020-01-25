@@ -8,17 +8,23 @@ use std::fs::{create_dir_all, File};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Component, Path, PathBuf};
 
+// Datastructure for holding the list of files, based on a hashmap
 pub struct FileMap {
     tree: HashMap<String, Vec<PathBuf>>,
 }
 
 impl FileMap {
+
+    // Constructor that initialises the map
     pub fn new() -> FileMap {
         FileMap {
             tree: HashMap::new(),
         }
     }
+
+    // Add a song with known band
     pub fn add(&mut self, file: PathBuf, band: String) {
+        let band = band.trim().to_lowercase();
         match self.tree.get_mut(&band) {
             Some(list) => {
                 list.push(file);
@@ -29,13 +35,18 @@ impl FileMap {
         }
     }
     pub fn add_file(&mut self, file: PathBuf) {
+        // Add a song based on a path
         let band = get_artist(&file);
         self.add(file, band);
     }
+
+    // Add a song based on a relative path
     pub fn add_relative(&mut self, file: PathBuf, base: &PathBuf) {
         let band = get_artist_relative(&file, &base);
         self.add(file, band);
     }
+
+    // Read and add files from a directory
     pub fn read_dir(&mut self, dir: PathBuf) {
         if !dir.exists() || !dir.is_dir() {
             return;
@@ -59,6 +70,8 @@ impl FileMap {
             }
         }
     }
+
+    // Read and add files from a file (e.g. playlist)
     pub fn read_file(&mut self, file: PathBuf) {
         if !file.exists() || !file.is_file() {
             return;
@@ -77,6 +90,8 @@ impl FileMap {
             }
         }
     }
+
+    // Create a list of all songs in the filemap, and so a artist-aware shuffle
     pub fn shuffle(&self) -> Vec<&PathBuf> {
         let mut list: Vec<&PathBuf> = vec![];
         if self.tree.is_empty() {
@@ -84,6 +99,7 @@ impl FileMap {
         }
         let mut len: usize = 0;
         let mut rng = rand::thread_rng();
+        // Add all songs from each band (shuffled artisti-wise), and find the maximum number of songs for one band
         self.tree.iter().for_each(|(_, v)| {
             if len < v.len() {
                 len = v.len();
@@ -95,17 +111,20 @@ impl FileMap {
         if list.is_empty() {
             return list;
         }
+        // Reorder the list so that the songs from the same band are spread out
         let mut list: Vec<&PathBuf> = sample(&mut rng, len, len)
             .into_iter()
             .flat_map(|i| list.iter().skip(i).step_by(len))
             .map(|p| *p)
             .collect();
-        let stride: usize = (list.len() * 2 - 1) / (len * 5) + 1;
+        // Do some local randomisation (to not always have the same order of artists)
+        let stride: usize = (list.len() * 2) / (len * 5) + 1;
         list.chunks_mut(stride).for_each(|c| c.shuffle(&mut rng));
         list
     }
 }
 
+// Get the artist from a file (first try reading the meta data then parsing the path)
 fn get_artist(file: &PathBuf) -> String {
     match Tag::read_from_path(&file) {
         Err(_) => get_artist_from_path(&file),
@@ -116,6 +135,7 @@ fn get_artist(file: &PathBuf) -> String {
     }
 }
 
+// Get the artist from a relative file (first try reading the meta data then parsing the relative path)
 fn get_artist_relative(file: &PathBuf, base: &PathBuf) -> String {
     if let Ok(tag) = Tag::read_from_path(&file) {
         if let Some(name) = tag.artist() {
@@ -128,6 +148,7 @@ fn get_artist_relative(file: &PathBuf, base: &PathBuf) -> String {
     }
 }
 
+// Parse a path to try to guess the band name
 fn get_artist_from_path(path: &PathBuf) -> String {
     if let Some(parent) = path.parent() {
         for dir in parent.components() {
@@ -141,6 +162,7 @@ fn get_artist_from_path(path: &PathBuf) -> String {
     String::from("")
 }
 
+// Get the path of the parent dir (handling also relative paths)
 fn get_parent_dir(path: &PathBuf) -> PathBuf {
     if path.is_relative() {
         path.parent().unwrap_or(Path::new(".")).to_path_buf()
@@ -151,6 +173,8 @@ fn get_parent_dir(path: &PathBuf) -> PathBuf {
     }
 }
 
+
+// States for parsing commandline parameters
 #[derive(PartialEq, Eq)]
 enum State {
     Init,
@@ -159,6 +183,7 @@ enum State {
     Output,
 }
 
+// The main function parses commandline parameters, reads files, shuffles, and outputs playlist(s)
 fn main() {
     let mut files = FileMap::new();
     let mut state: State = State::Init;
@@ -167,6 +192,7 @@ fn main() {
     while let Some(a) = iter.next() {
         let a = a.trim();
         match state {
+            // Handling adding of files to the filemap
             State::Init | State::Input => {
                 if a == "--" {
                     state = State::Middle;
@@ -187,6 +213,7 @@ fn main() {
                     state = State::Input;
                 }
             }
+            // Handling shuffling and outputting
             State::Middle | State::Output => {
                 state = State::Output;
                 let path = PathBuf::from(a);
@@ -213,6 +240,7 @@ fn main() {
             }
         }
     }
+    // Checking the ending state for insertion of default behaviour (help etc.)
     match state {
         State::Middle => {
             for f in files.shuffle() {
@@ -226,6 +254,7 @@ fn main() {
     }
 }
 
+// Print usage help
 fn help() {
     let exe = args().next().unwrap_or(String::from("cargo run --"));
     println!("Description:");
@@ -239,6 +268,7 @@ fn help() {
     println!("  OUTPUTS  are files (output to terminal if empty)");
     println!("\nExamples:\n  {} ~/Music -- playlist.m3u\n  {} playlist1.m3u playlist2.m3u -- shuffled.m3u", &exe, &exe);
 }
+
 
 #[cfg(test)]
 mod tests {

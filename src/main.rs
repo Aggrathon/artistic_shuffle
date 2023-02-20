@@ -14,7 +14,6 @@ pub struct FileMap {
 }
 
 impl FileMap {
-
     // Constructor that initialises the map
     pub fn new() -> FileMap {
         FileMap {
@@ -41,8 +40,8 @@ impl FileMap {
     }
 
     // Add a song based on a relative path
-    pub fn add_relative(&mut self, file: PathBuf, base: &PathBuf) {
-        let band = get_artist_relative(&file, &base);
+    pub fn add_relative(&mut self, file: PathBuf, base: &Path) {
+        let band = get_artist_relative(&file, base);
         self.add(file, band);
     }
 
@@ -57,7 +56,7 @@ impl FileMap {
             if let Ok(iter) = d.read_dir() {
                 iter.for_each(|entry| {
                     if let Ok(item) = entry {
-                        if !item.file_name().to_string_lossy().starts_with(".") {
+                        if !item.file_name().to_string_lossy().starts_with('.') {
                             let p: PathBuf = item.path();
                             if p.is_dir() {
                                 stack.push(p);
@@ -78,14 +77,12 @@ impl FileMap {
         }
         let parent = get_parent_dir(&file);
         if let Ok(f) = File::open(&file) {
-            for l in BufReader::new(f).lines() {
-                if let Ok(line) = l {
-                    let path = PathBuf::from(line);
-                    if path.is_absolute() && file.is_absolute() {
-                        self.add_relative(path, &parent);
-                    } else {
-                        self.add(parent.join(&path), get_artist(&path));
-                    }
+            for line in BufReader::new(f).lines().flatten() {
+                let path = PathBuf::from(line);
+                if path.is_absolute() && file.is_absolute() {
+                    self.add_relative(path, &parent);
+                } else {
+                    self.add(parent.join(&path), get_artist(&path));
                 }
             }
         }
@@ -115,7 +112,7 @@ impl FileMap {
         let mut list: Vec<&PathBuf> = sample(&mut rng, len, len)
             .into_iter()
             .flat_map(|i| list.iter().skip(i).step_by(len))
-            .map(|p| *p)
+            .copied()
             .collect();
         // Do some local randomisation (to not always have the same order of artists)
         let stride: usize = (list.len() * 2) / (len * 5) + 1;
@@ -124,32 +121,38 @@ impl FileMap {
     }
 }
 
+impl Default for FileMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // Get the artist from a file (first try reading the meta data then parsing the path)
 fn get_artist(file: &PathBuf) -> String {
-    match Tag::read_from_path(&file) {
-        Err(_) => get_artist_from_path(&file),
+    match Tag::read_from_path(file) {
+        Err(_) => get_artist_from_path(file),
         Ok(tag) => match tag.artist() {
             Some(name) => String::from(name),
-            None => get_artist_from_path(&file),
+            None => get_artist_from_path(file),
         },
     }
 }
 
 // Get the artist from a relative file (first try reading the meta data then parsing the relative path)
-fn get_artist_relative(file: &PathBuf, base: &PathBuf) -> String {
-    if let Ok(tag) = Tag::read_from_path(&file) {
+fn get_artist_relative(file: &PathBuf, base: &Path) -> String {
+    if let Ok(tag) = Tag::read_from_path(file) {
         if let Some(name) = tag.artist() {
             return String::from(name);
         }
     };
-    match diff_paths(&file, &base) {
+    match diff_paths(file, base) {
         Some(p) => get_artist_from_path(&p),
         None => String::from(""),
     }
 }
 
 // Parse a path to try to guess the band name
-fn get_artist_from_path(path: &PathBuf) -> String {
+fn get_artist_from_path(path: &Path) -> String {
     if let Some(parent) = path.parent() {
         for dir in parent.components() {
             if let Component::Normal(name) = dir {
@@ -163,16 +166,16 @@ fn get_artist_from_path(path: &PathBuf) -> String {
 }
 
 // Get the path of the parent dir (handling also relative paths)
-fn get_parent_dir(path: &PathBuf) -> PathBuf {
+fn get_parent_dir(path: &Path) -> PathBuf {
     if path.is_relative() {
-        path.parent().unwrap_or(Path::new(".")).to_path_buf()
+        path.parent()
+            .map_or_else(|| PathBuf::from("."), Path::to_path_buf)
     } else {
         path.parent()
-            .unwrap_or(path.ancestors().last().unwrap())
+            .unwrap_or_else(|| path.ancestors().last().unwrap())
             .to_path_buf()
     }
 }
-
 
 // States for parsing commandline parameters
 #[derive(PartialEq, Eq)]
@@ -189,7 +192,7 @@ fn main() {
     let mut state: State = State::Init;
     let mut iter = args();
     iter.next();
-    while let Some(a) = iter.next() {
+    for a in iter {
         let a = a.trim();
         match state {
             // Handling adding of files to the filemap
@@ -224,13 +227,13 @@ fn main() {
                     Ok(mut file) => {
                         for f in files.shuffle() {
                             if f.is_absolute() {
-                                write!(file, "{}\n", f.to_string_lossy())
+                                writeln!(file, "{}", f.to_string_lossy())
                                     .expect("Could not write to file");
                             } else {
-                                match diff_paths(&f, &parent) {
-                                    Some(f) => write!(file, "{}\n", f.to_string_lossy())
+                                match diff_paths(f, &parent) {
+                                    Some(f) => writeln!(file, "{}", f.to_string_lossy())
                                         .expect("Could not write to file"),
-                                    None => write!(file, "{}\n", f.to_string_lossy())
+                                    None => writeln!(file, "{}", f.to_string_lossy())
                                         .expect("Could not write to file"),
                                 };
                             };
@@ -256,7 +259,9 @@ fn main() {
 
 // Print usage help
 fn help() {
-    let exe = args().next().unwrap_or(String::from("cargo run --"));
+    let exe = args()
+        .next()
+        .unwrap_or_else(|| String::from("cargo run --"));
     println!("Description:");
     println!("  Create a shuffled playlist where songs from the same artist are spread out");
     println!("  The artist names are taken from the files' ID3-tags.");
@@ -269,7 +274,6 @@ fn help() {
     println!("\nExamples:\n  {} ~/Music -- playlist.m3u\n  {} playlist1.m3u playlist2.m3u -- shuffled.m3u", &exe, &exe);
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -279,7 +283,7 @@ mod tests {
         let mut files = FileMap::new();
         files.add_file(PathBuf::from("a/b"));
         files.add_relative(PathBuf::from("d/e/f"), &PathBuf::from("d"));
-        dbg!(&files.tree);
+        // dbg!(&files.tree);
         assert!(files.tree.contains_key(&String::from("a")));
         assert!(files.tree.contains_key(&String::from("e")));
     }

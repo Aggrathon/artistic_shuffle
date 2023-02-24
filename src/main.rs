@@ -1,4 +1,4 @@
-use id3::Tag;
+use id3::{Tag, TagLike};
 use pathdiff::diff_paths;
 use rand::prelude::SliceRandom;
 use rand::seq::index::sample;

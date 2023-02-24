@@ -1,7 +1,6 @@
 use id3::{Tag, TagLike};
 use pathdiff::diff_paths;
-use rand::prelude::SliceRandom;
-use rand::seq::index::sample;
+use shuffle::{Counter, Shuffler};
 use std::collections::HashMap;
 use std::env::args;
 use std::fs::{create_dir_all, File};
@@ -11,40 +10,37 @@ use std::path::{Component, Path, PathBuf};
 mod shuffle;
 
 // Datastructure for holding the list of files, based on a hashmap
-pub struct FileMap {
-    tree: HashMap<String, Vec<PathBuf>>,
-}
+pub struct Playlist(HashMap<String, Counter<PathBuf>>);
 
-impl FileMap {
+impl Playlist {
     // Constructor that initialises the map
-    pub fn new() -> FileMap {
-        FileMap {
-            tree: HashMap::new(),
-        }
+    pub fn new() -> Playlist {
+        Playlist(HashMap::new())
     }
 
     // Add a song with known band
-    pub fn add(&mut self, file: PathBuf, band: String) {
+    pub fn add(&mut self, file: PathBuf, band: String, times: usize) {
         let band = band.trim().to_lowercase();
-        match self.tree.get_mut(&band) {
-            Some(list) => {
-                list.push(file);
-            }
+        match self.0.get_mut(&band) {
+            Some(counter) => counter.addn(file, times),
             None => {
-                self.tree.insert(band, vec![file]);
+                let mut counter = Counter::new();
+                counter.addn(file, times);
+                self.0.insert(band, counter);
             }
         }
     }
+
     pub fn add_file(&mut self, file: PathBuf) {
         // Add a song based on a path
         let band = get_artist(&file);
-        self.add(file, band);
+        self.add(file, band, 1);
     }
 
     // Add a song based on a relative path
     pub fn add_relative(&mut self, file: PathBuf, base: &Path) {
         let band = get_artist_relative(&file, base);
-        self.add(file, band);
+        self.add(file, band, 1);
     }
 
     // Read and add files from a directory
@@ -84,46 +80,28 @@ impl FileMap {
                 if path.is_absolute() && file.is_absolute() {
                     self.add_relative(path, &parent);
                 } else {
-                    self.add(parent.join(&path), get_artist(&path));
+                    self.add(parent.join(&path), get_artist(&path), 1);
                 }
             }
         }
     }
 
     // Create a list of all songs in the filemap with an artist-aware shuffle
-    pub fn shuffle(&self) -> Vec<&PathBuf> {
-        let mut list: Vec<&PathBuf> = vec![];
-        if self.tree.is_empty() {
-            return list;
-        }
-        let mut len: usize = 0;
-        let mut rng = rand::thread_rng();
-        // Add all songs from each band (shuffled artist-wise), and find the maximum number of songs for one band
-        self.tree.iter().for_each(|(_, v)| {
-            if len < v.len() {
-                len = v.len();
+    pub fn shuffle(&self) -> Shuffler<Shuffler<&PathBuf>> {
+        let mut ts = shuffle::Shuffler::new();
+        for (_, counter) in self.0.iter() {
+            let mut ts2 = shuffle::Shuffler::new();
+            for (p, n) in counter.iter() {
+                ts2.addn(p, *n);
             }
-            let start = list.len();
-            list.extend(v.iter());
-            list[start..].shuffle(&mut rng);
-        });
-        if list.is_empty() {
-            return list;
+            ts.nested_add(ts2);
         }
-        // Reorder the list so that the songs from the same band are spread out
-        let mut list: Vec<&PathBuf> = sample(&mut rng, len, len)
-            .into_iter()
-            .flat_map(|i| list.iter().skip(i).step_by(len))
-            .copied()
-            .collect();
-        // Do some local randomisation (to not always have the same order of artists)
-        let stride: usize = (list.len() * 2) / (len * 5) + 1;
-        list.chunks_mut(stride).for_each(|c| c.shuffle(&mut rng));
-        list
+        ts.nested_shuffle(10);
+        ts
     }
 }
 
-impl Default for FileMap {
+impl Default for Playlist {
     fn default() -> Self {
         Self::new()
     }
@@ -190,7 +168,7 @@ enum State {
 
 // The main function parses commandline parameters, reads files, shuffles, and outputs playlist(s)
 fn main() {
-    let mut files = FileMap::new();
+    let mut files = Playlist::new();
     let mut state: State = State::Init;
     let mut iter = args();
     iter.next();
@@ -227,7 +205,7 @@ fn main() {
                 match File::create(&path) {
                     Err(e) => println!("{}", e),
                     Ok(mut file) => {
-                        for f in files.shuffle() {
+                        for f in files.shuffle().nested_iter() {
                             if f.is_absolute() {
                                 writeln!(file, "{}", f.to_string_lossy())
                                     .expect("Could not write to file");
@@ -248,7 +226,7 @@ fn main() {
     // Checking the ending state for insertion of default behaviour (help etc.)
     match state {
         State::Middle => {
-            for f in files.shuffle() {
+            for f in files.shuffle().nested_iter() {
                 println!("{}", f.to_string_lossy());
             }
         }
@@ -282,40 +260,33 @@ mod tests {
 
     #[test]
     fn test_path_band() {
-        let mut files = FileMap::new();
+        let mut files = Playlist::new();
         files.add_file(PathBuf::from("a/b"));
         files.add_relative(PathBuf::from("d/e/f"), &PathBuf::from("d"));
         // dbg!(&files.tree);
-        assert!(files.tree.contains_key(&String::from("a")));
-        assert!(files.tree.contains_key(&String::from("e")));
+        assert!(files.0.contains_key(&String::from("a")));
+        assert!(files.0.contains_key(&String::from("e")));
     }
 
     #[test]
     fn test_shuffle() {
-        let mut files = FileMap::new();
-        files.add(PathBuf::from("a"), String::from("a"));
-        files.add(PathBuf::from("b"), String::from("a"));
-        files.add(PathBuf::from("c"), String::from("b"));
-        files.add(PathBuf::from("d"), String::from("b"));
+        let mut files = Playlist::new();
+        files.add(PathBuf::from("a"), String::from("a"), 1);
+        files.add(PathBuf::from("b"), String::from("a"), 1);
+        files.add(PathBuf::from("c"), String::from("b"), 1);
+        files.add(PathBuf::from("d"), String::from("b"), 1);
 
-        let shuff = files.shuffle();
+        let shuff = files.shuffle().nested_iter().copied().collect::<Vec<_>>();
 
         assert!(shuff.contains(&&PathBuf::from("a")));
         assert!(shuff.contains(&&PathBuf::from("b")));
         assert!(shuff.contains(&&PathBuf::from("c")));
         assert!(shuff.contains(&&PathBuf::from("d")));
-
-        assert!(
-            shuff[..2].contains(&&PathBuf::from("a")) || shuff[..2].contains(&&PathBuf::from("b"))
-        );
-        assert!(
-            shuff[..2].contains(&&PathBuf::from("c")) || shuff[..2].contains(&&PathBuf::from("d"))
-        );
     }
 
     #[test]
     fn test_dir() {
-        let mut files = FileMap::new();
+        let mut files = Playlist::new();
         files.read_dir(PathBuf::from("."));
     }
 }

@@ -3,18 +3,18 @@ use std::collections::HashMap;
 
 pub struct Counter<T: std::hash::Hash + std::cmp::Eq>(HashMap<T, usize>);
 
-pub struct TaggedShuffle<T> {
+pub struct Shuffler<T> {
     items: Vec<T>,
     order: Vec<usize>,
     max_same: usize,
 }
 
-pub struct TaggedShuffleIterator<'a, T> {
-    shuffle: &'a TaggedShuffle<T>,
+pub struct ShufflerIterator<'a, T> {
+    shuffle: &'a Shuffler<T>,
     index: usize,
 }
-pub struct TaggedShuffleNestedIterator<'a, T> {
-    shuffle: &'a TaggedShuffle<TaggedShuffle<T>>,
+pub struct NestedShufflerIterator<'a, T> {
+    shuffle: &'a Shuffler<Shuffler<T>>,
     outer: usize,
     inner: Vec<usize>,
 }
@@ -47,9 +47,9 @@ impl<T: std::hash::Hash + std::cmp::Eq> Default for Counter<T> {
     }
 }
 
-impl<T> TaggedShuffle<T> {
-    pub fn new() -> TaggedShuffle<T> {
-        TaggedShuffle {
+impl<T> Shuffler<T> {
+    pub fn new() -> Shuffler<T> {
+        Shuffler {
             items: Vec::new(),
             order: Vec::new(),
             max_same: 1,
@@ -131,15 +131,15 @@ impl<T> TaggedShuffle<T> {
         self.order.is_empty()
     }
 
-    pub fn iter(&self) -> TaggedShuffleIterator<T> {
-        TaggedShuffleIterator {
+    pub fn iter(&self) -> ShufflerIterator<T> {
+        ShufflerIterator {
             shuffle: self,
             index: 0,
         }
     }
 }
 
-impl<T> TaggedShuffle<TaggedShuffle<T>> {
+impl<T> Shuffler<Shuffler<T>> {
     pub fn nested_shuffle(&mut self, max_lookahead: usize) {
         for rnd in self.items.iter_mut() {
             rnd.shuffle(max_lookahead);
@@ -147,21 +147,21 @@ impl<T> TaggedShuffle<TaggedShuffle<T>> {
         self.shuffle(max_lookahead);
     }
 
-    pub fn nested_iter(&self) -> TaggedShuffleNestedIterator<T> {
-        TaggedShuffleNestedIterator {
+    pub fn nested_iter(&self) -> NestedShufflerIterator<T> {
+        NestedShufflerIterator {
             shuffle: self,
             outer: 0,
             inner: std::iter::repeat(0).take(self.items.len()).collect(),
         }
     }
 
-    pub fn nested_add(&mut self, item: TaggedShuffle<T>) {
+    pub fn nested_add(&mut self, item: Shuffler<T>) {
         let len = item.len();
         self.addn(item, len);
     }
 }
 
-impl<T> Default for TaggedShuffle<T>
+impl<T> Default for Shuffler<T>
 where
     T: std::cmp::Eq,
     T: std::hash::Hash,
@@ -171,7 +171,7 @@ where
     }
 }
 
-impl<'a, T> Iterator for TaggedShuffleIterator<'a, T> {
+impl<'a, T> Iterator for ShufflerIterator<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -181,7 +181,7 @@ impl<'a, T> Iterator for TaggedShuffleIterator<'a, T> {
     }
 }
 
-impl<'a, T> Iterator for TaggedShuffleNestedIterator<'a, T> {
+impl<'a, T> Iterator for NestedShufflerIterator<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -218,7 +218,7 @@ mod tests {
     #[test]
     fn test_shuffle() {
         for _ in 0..10 {
-            let mut ts = TaggedShuffle::new();
+            let mut ts = Shuffler::new();
             for i in 0..4 {
                 ts.addn(i, i + 1);
             }
@@ -229,9 +229,9 @@ mod tests {
 
     #[test]
     fn test_nested_shuffle() {
-        let mut ts = TaggedShuffle::new();
+        let mut ts = Shuffler::new();
         for i in 0..4 {
-            let mut ts2 = TaggedShuffle::new();
+            let mut ts2 = Shuffler::new();
             ts2.addn(i, 4);
             ts.nested_add(ts2);
         }

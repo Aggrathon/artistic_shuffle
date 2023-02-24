@@ -8,6 +8,8 @@ use std::fs::{create_dir_all, File};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Component, Path, PathBuf};
 
+mod shuffle;
+
 // Datastructure for holding the list of files, based on a hashmap
 pub struct FileMap {
     tree: HashMap<String, Vec<PathBuf>>,
@@ -88,7 +90,7 @@ impl FileMap {
         }
     }
 
-    // Create a list of all songs in the filemap, and so a artist-aware shuffle
+    // Create a list of all songs in the filemap with an artist-aware shuffle
     pub fn shuffle(&self) -> Vec<&PathBuf> {
         let mut list: Vec<&PathBuf> = vec![];
         if self.tree.is_empty() {
@@ -96,7 +98,7 @@ impl FileMap {
         }
         let mut len: usize = 0;
         let mut rng = rand::thread_rng();
-        // Add all songs from each band (shuffled artisti-wise), and find the maximum number of songs for one band
+        // Add all songs from each band (shuffled artist-wise), and find the maximum number of songs for one band
         self.tree.iter().for_each(|(_, v)| {
             if len < v.len() {
                 len = v.len();

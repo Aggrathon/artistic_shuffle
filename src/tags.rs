@@ -66,7 +66,7 @@ fn parse_rating_text100(tag: &Tag) -> Option<u8> {
     Some(v * 2 + v / 2)
 }
 
-// Parse a path to try to guess the band name
+// Parse a path to try to guess the artist name
 fn parse_artist_from_path(path: &Path) -> String {
     if let Some(parent) = path.parent() {
         let (p1, p2) = parent.components().fold((None, None), |p, c| {

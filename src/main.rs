@@ -15,17 +15,17 @@ impl Playlist {
         Playlist(HashMap::new())
     }
 
-    // Add a song with known band and rating
-    pub fn add(&mut self, file: PathBuf, band: String, rating: Option<u8>) {
-        let band = band.trim().to_lowercase();
+    // Add a track with known artist and rating
+    pub fn add(&mut self, file: PathBuf, artist: String, rating: Option<u8>) {
+        let artist = artist.trim().to_lowercase();
         // A rating of "200" is "4/5"
         let times = rating.map(|r| r / 200 + 1).unwrap_or(1) as usize;
-        match self.0.get_mut(&band) {
+        match self.0.get_mut(&artist) {
             Some(counter) => counter.addn(file, times),
             None => {
                 let mut counter = Counter::new();
                 counter.addn(file, times);
-                self.0.insert(band, counter);
+                self.0.insert(artist, counter);
             }
         }
     }
@@ -40,14 +40,14 @@ impl Playlist {
     }
 
     pub fn add_file(&mut self, file: PathBuf) {
-        let (band, rating) = tags::get_tags(&file);
-        self.add(file, band, rating);
+        let (artist, rating) = tags::get_tags(&file);
+        self.add(file, artist, rating);
     }
 
     /// Add a file with a different output path
     pub fn add_file2(&mut self, file: &Path, path: PathBuf) {
-        let (band, rating) = tags::get_tags(file);
-        self.add(path, band, rating);
+        let (artist, rating) = tags::get_tags(file);
+        self.add(path, artist, rating);
     }
 
     fn add_dir(&mut self, path: PathBuf) {
@@ -120,7 +120,7 @@ impl Playlist {
         }
     }
 
-    // Create a list of all songs in the filemap with an artist-aware shuffle
+    /// Create a list of all tracks in the playlist with an artist-aware shuffle
     pub fn shuffle(&self) -> Shuffler<Shuffler<&PathBuf>> {
         let mut ts = shuffle::Shuffler::new();
         for (_, counter) in self.0.iter() {
@@ -143,9 +143,9 @@ impl Default for Playlist {
 
 fn main() {
     xflags::xflags! {
-        /// Create a shuffled playlist where no artist is repeated too often and highly rated songs occur more often.
+        /// Create a shuffled playlist where no artist is repeated too often and highly rated tracks occur more often.
         /// The artists and the ratings (4/5 ★ and up) are taken from the files' metadata.
-        /// If metadata is missing then the artist is based on the path (assuming an 'artist/album/song' directory structure).
+        /// If metadata is missing then the artist is based on the path (assuming an 'artist/album/track' directory structure).
         /// Relative paths are preserved, so make sure that the output is in the correct location.
         cmd artistic_shuffle {
             /// Files to add to the playlist (directories are recursively added).
@@ -188,29 +188,11 @@ fn main() {
                         eprintln!("Could not write to output file '{}': {}", path.display(), e);
                         break;
                     }
-                    // TODO: Should relative paths be fixed?
                 }
             }
         }
     }
 }
-
-// // Print usage help
-// fn help() {
-//     let exe = args()
-//         .next()
-//         .unwrap_or_else(|| String::from("cargo run --"));
-//     println!("Description:");
-//     println!("  Create a shuffled playlist where songs from the same artist are spread out");
-//     println!("  The artist names are taken from the files' ID3-tags.");
-//     println!("  If a tag is missing then the artist is based on the filename (first directory not in the base path).");
-//     println!("  The output paths will be global/local depending on the input paths.");
-//     println!("\nUsage:\n  {} INPUTS -- OUTPUTS", &exe);
-//     println!("\nArguments:");
-//     println!("  INPUTS   are directories or .m3u/.csv/.txt files (\".\" if empty)");
-//     println!("  OUTPUTS  are files (output to terminal if empty)");
-//     println!("\nExamples:\n  {} ~/Music -- playlist.m3u\n  {} playlist1.m3u playlist2.m3u -- shuffled.m3u", &exe, &exe);
-// }
 
 #[cfg(test)]
 mod tests {

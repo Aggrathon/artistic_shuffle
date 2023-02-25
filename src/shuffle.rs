@@ -24,6 +24,7 @@ impl<T: std::hash::Hash + std::cmp::Eq> Counter<T> {
         Counter(HashMap::new())
     }
 
+    #[allow(dead_code)]
     pub fn add(&mut self, item: T) {
         self.addn(item, 1);
     }

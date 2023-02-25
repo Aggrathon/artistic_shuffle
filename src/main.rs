@@ -1,26 +1,27 @@
-use id3::{Tag, TagLike};
 use pathdiff::diff_paths;
 use shuffle::{Counter, Shuffler};
 use std::collections::HashMap;
 use std::env::args;
 use std::fs::{create_dir_all, File};
 use std::io::{BufRead, BufReader, Write};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
+use walkdir::{DirEntry, WalkDir};
 
 mod shuffle;
+mod tags;
 
-// Datastructure for holding the list of files, based on a hashmap
 pub struct Playlist(HashMap<String, Counter<PathBuf>>);
 
 impl Playlist {
-    // Constructor that initialises the map
     pub fn new() -> Playlist {
         Playlist(HashMap::new())
     }
 
-    // Add a song with known band
-    pub fn add(&mut self, file: PathBuf, band: String, times: usize) {
+    // Add a song with known band and rating
+    pub fn add(&mut self, file: PathBuf, band: String, rating: Option<u8>) {
         let band = band.trim().to_lowercase();
+        // A rating of "200" is "4/5"
+        let times = rating.map(|r| r / 200 + 1).unwrap_or(1) as usize;
         match self.0.get_mut(&band) {
             Some(counter) => counter.addn(file, times),
             None => {
@@ -31,57 +32,92 @@ impl Playlist {
         }
     }
 
-    pub fn add_file(&mut self, file: PathBuf) {
-        // Add a song based on a path
-        let band = get_artist(&file);
-        self.add(file, band, 1);
-    }
-
-    // Add a song based on a relative path
-    pub fn add_relative(&mut self, file: PathBuf, base: &Path) {
-        let band = get_artist_relative(&file, base);
-        self.add(file, band, 1);
-    }
-
-    // Read and add files from a directory
-    pub fn read_dir(&mut self, dir: PathBuf) {
-        if !dir.exists() || !dir.is_dir() {
-            return;
+    /// Add the path to the playlist (recursively if it is a directory)
+    pub fn add_path(&mut self, path: PathBuf) {
+        if path.is_dir() {
+            self.add_dir(path)
+        } else {
+            self.add_file(path)
         }
-        let mut stack: Vec<PathBuf> = vec![];
-        stack.push(PathBuf::from(&dir));
-        while let Some(d) = stack.pop() {
-            if let Ok(iter) = d.read_dir() {
-                iter.for_each(|entry| {
-                    if let Ok(item) = entry {
-                        if !item.file_name().to_string_lossy().starts_with('.') {
-                            let p: PathBuf = item.path();
-                            if p.is_dir() {
-                                stack.push(p);
-                            } else {
-                                self.add_relative(p, &dir);
-                            }
-                        }
-                    }
-                })
+    }
+
+    pub fn add_file(&mut self, file: PathBuf) {
+        let (band, rating) = tags::get_tags(&file);
+        self.add(file, band, rating);
+    }
+
+    /// Add a file with a different output path
+    pub fn add_file2(&mut self, file: &Path, path: PathBuf) {
+        let (band, rating) = tags::get_tags(file);
+        self.add(path, band, rating);
+    }
+
+    fn add_dir(&mut self, path: PathBuf) {
+        let is_not_hidden = |e: &DirEntry| {
+            e.file_name()
+                .to_str()
+                .map(|s| !s.starts_with('.'))
+                .unwrap_or(true)
+        };
+        for entry in WalkDir::new(path)
+            .follow_links(true)
+            .into_iter()
+            .filter_entry(is_not_hidden)
+        {
+            match entry {
+                Ok(entry) => self.add_file(entry.path().to_path_buf()),
+                Err(error) => eprintln!("Could not access file: {}", error),
             }
         }
     }
 
-    // Read and add files from a file (e.g. playlist)
-    pub fn read_file(&mut self, file: PathBuf) {
-        if !file.exists() || !file.is_file() {
-            return;
+    /// Read the contents of the file and add to the playlist (recursively if it is a directory)
+    pub fn read_path(&mut self, path: PathBuf) {
+        match path.metadata() {
+            Ok(md) => {
+                if md.is_dir() {
+                    self.read_dir(path)
+                } else if md.is_file() {
+                    self.read_file(&path)
+                } else {
+                    eprintln!("Unknown type of object: {}", path.to_string_lossy())
+                }
+            }
+            Err(e) => eprintln!("Error accessing path '{}': {}", path.to_string_lossy(), e),
         }
-        let parent = get_parent_dir(&file);
-        if let Ok(f) = File::open(&file) {
+    }
+
+    /// Read and add files from a file (e.g. playlist)
+    fn read_file(&mut self, file: &Path) {
+        let parent = file.parent();
+        if let Ok(f) = File::open(file) {
             for line in BufReader::new(f).lines().flatten() {
                 let path = PathBuf::from(line);
-                if path.is_absolute() && file.is_absolute() {
-                    self.add_relative(path, &parent);
+                if parent.is_none() || path.is_absolute() {
+                    self.add_file(path);
                 } else {
-                    self.add(parent.join(&path), get_artist(&path), 1);
+                    #[allow(clippy::unnecessary_unwrap)]
+                    self.add_file2(&parent.unwrap().join(&path), path);
                 }
+            }
+        }
+    }
+
+    fn read_dir(&mut self, path: PathBuf) {
+        let is_not_hidden = |e: &DirEntry| {
+            e.file_name()
+                .to_str()
+                .map(|s| !s.starts_with('.'))
+                .unwrap_or(true)
+        };
+        for entry in WalkDir::new(path)
+            .follow_links(true)
+            .into_iter()
+            .filter_entry(is_not_hidden)
+        {
+            match entry {
+                Ok(entry) => self.read_file(entry.path()),
+                Err(error) => eprintln!("Could not access file: {}", error),
             }
         }
     }
@@ -105,44 +141,6 @@ impl Default for Playlist {
     fn default() -> Self {
         Self::new()
     }
-}
-
-// Get the artist from a file (first try reading the meta data then parsing the path)
-fn get_artist(file: &PathBuf) -> String {
-    match Tag::read_from_path(file) {
-        Err(_) => get_artist_from_path(file),
-        Ok(tag) => match tag.artist() {
-            Some(name) => String::from(name),
-            None => get_artist_from_path(file),
-        },
-    }
-}
-
-// Get the artist from a relative file (first try reading the meta data then parsing the relative path)
-fn get_artist_relative(file: &PathBuf, base: &Path) -> String {
-    if let Ok(tag) = Tag::read_from_path(file) {
-        if let Some(name) = tag.artist() {
-            return String::from(name);
-        }
-    };
-    match diff_paths(file, base) {
-        Some(p) => get_artist_from_path(&p),
-        None => String::from(""),
-    }
-}
-
-// Parse a path to try to guess the band name
-fn get_artist_from_path(path: &Path) -> String {
-    if let Some(parent) = path.parent() {
-        for dir in parent.components() {
-            if let Component::Normal(name) = dir {
-                if let Some(nstr) = name.to_str() {
-                    return String::from(nstr);
-                }
-            }
-        }
-    }
-    String::from("")
 }
 
 // Get the path of the parent dir (handling also relative paths)
@@ -186,9 +184,9 @@ fn main() {
                     let path = PathBuf::from(a);
                     if path.exists() {
                         if path.is_dir() {
-                            files.read_dir(path);
+                            files.add_dir(path);
                         } else if path.is_file() {
-                            files.read_file(path);
+                            files.read_file(&path);
                         }
                     } else {
                         eprintln!("Input path {} doesn't exist", path.to_string_lossy());
@@ -259,34 +257,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_path_band() {
-        let mut files = Playlist::new();
-        files.add_file(PathBuf::from("a/b"));
-        files.add_relative(PathBuf::from("d/e/f"), &PathBuf::from("d"));
-        // dbg!(&files.tree);
-        assert!(files.0.contains_key(&String::from("a")));
-        assert!(files.0.contains_key(&String::from("e")));
+    fn test_add() {
+        let mut pl = Playlist::new();
+        pl.add_file(PathBuf::from("a/b"));
+        pl.add_file2(&PathBuf::from("d/e/f"), PathBuf::from("d"));
+        pl.add_dir(PathBuf::from("src"));
+        assert!(pl.0.contains_key(&String::from("a")));
+        assert!(pl.0.contains_key(&String::from("d")));
     }
 
     #[test]
     fn test_shuffle() {
-        let mut files = Playlist::new();
-        files.add(PathBuf::from("a"), String::from("a"), 1);
-        files.add(PathBuf::from("b"), String::from("a"), 1);
-        files.add(PathBuf::from("c"), String::from("b"), 1);
-        files.add(PathBuf::from("d"), String::from("b"), 1);
+        let mut pl = Playlist::new();
+        pl.add(PathBuf::from("a"), String::from("a"), None);
+        pl.add(PathBuf::from("b"), String::from("a"), Some(199));
+        pl.add(PathBuf::from("c"), String::from("b"), Some(200));
+        pl.add(PathBuf::from("d"), String::from("b"), Some(201));
 
-        let shuff = files.shuffle().nested_iter().copied().collect::<Vec<_>>();
+        let shuff = pl.shuffle().nested_iter().copied().collect::<Vec<_>>();
 
         assert!(shuff.contains(&&PathBuf::from("a")));
         assert!(shuff.contains(&&PathBuf::from("b")));
         assert!(shuff.contains(&&PathBuf::from("c")));
         assert!(shuff.contains(&&PathBuf::from("d")));
-    }
-
-    #[test]
-    fn test_dir() {
-        let mut files = Playlist::new();
-        files.read_dir(PathBuf::from("."));
+        assert_eq!(shuff.len(), 6);
     }
 }

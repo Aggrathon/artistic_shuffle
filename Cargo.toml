@@ -5,7 +5,6 @@ authors = ["Aggrathon <antonbjo@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-id3 = "1.6"
 rand = "0.8"
 pathdiff = "0.2"
 lofty = "0.11"

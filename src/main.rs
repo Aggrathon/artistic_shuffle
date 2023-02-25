@@ -1,7 +1,5 @@
-use pathdiff::diff_paths;
 use shuffle::{Counter, Shuffler};
 use std::collections::HashMap;
-use std::env::args;
 use std::fs::{create_dir_all, File};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -143,114 +141,76 @@ impl Default for Playlist {
     }
 }
 
-// Get the path of the parent dir (handling also relative paths)
-fn get_parent_dir(path: &Path) -> PathBuf {
-    if path.is_relative() {
-        path.parent()
-            .map_or_else(|| PathBuf::from("."), Path::to_path_buf)
-    } else {
-        path.parent()
-            .unwrap_or_else(|| path.ancestors().last().unwrap())
-            .to_path_buf()
-    }
-}
-
-// States for parsing commandline parameters
-#[derive(PartialEq, Eq)]
-enum State {
-    Init,
-    Input,
-    Middle,
-    Output,
-}
-
-// The main function parses commandline parameters, reads files, shuffles, and outputs playlist(s)
 fn main() {
-    let mut files = Playlist::new();
-    let mut state: State = State::Init;
-    let mut iter = args();
-    iter.next();
-    for a in iter {
-        let a = a.trim();
-        match state {
-            // Handling adding of files to the filemap
-            State::Init | State::Input => {
-                if a == "--" {
-                    state = State::Middle;
-                    if state == State::Init {
-                        files.read_dir(PathBuf::from("."));
-                    }
-                } else {
-                    let path = PathBuf::from(a);
-                    if path.exists() {
-                        if path.is_dir() {
-                            files.add_dir(path);
-                        } else if path.is_file() {
-                            files.read_file(&path);
-                        }
-                    } else {
-                        eprintln!("Input path {} doesn't exist", path.to_string_lossy());
-                    }
-                    state = State::Input;
-                }
-            }
-            // Handling shuffling and outputting
-            State::Middle | State::Output => {
-                state = State::Output;
-                let path = PathBuf::from(a);
-                let parent = get_parent_dir(&path);
-                create_dir_all(&parent).unwrap_or_default();
-                match File::create(&path) {
-                    Err(e) => println!("{}", e),
-                    Ok(mut file) => {
-                        for f in files.shuffle().nested_iter() {
-                            if f.is_absolute() {
-                                writeln!(file, "{}", f.to_string_lossy())
-                                    .expect("Could not write to file");
-                            } else {
-                                match diff_paths(f, &parent) {
-                                    Some(f) => writeln!(file, "{}", f.to_string_lossy())
-                                        .expect("Could not write to file"),
-                                    None => writeln!(file, "{}", f.to_string_lossy())
-                                        .expect("Could not write to file"),
-                                };
-                            };
-                        }
-                    }
-                }
-            }
+    xflags::xflags! {
+        /// Create a shuffled playlist where no artist is repeated too often and highly rated songs occur more often.
+        /// The artists and the ratings (4/5 ★ and up) are taken from the files' metadata.
+        /// If metadata is missing then the artist is based on the path (assuming an 'artist/album/song' directory structure).
+        /// Relative paths are preserved, so make sure that the output is in the correct location.
+        cmd artistic_shuffle {
+            /// Files to add to the playlist (directories are recursively added).
+            repeated path: PathBuf
+            /// Files with lists to add to the playlist (directories are recursively read).
+            repeated -r,--read path: PathBuf
+            /// Files to write the playlist to. The playlist is reshuffled for every output. The playlist is printed to STDOUT if no output is given.
+            repeated -o,--output path: PathBuf
+        }
+    };
+    let flags = match Artistic_shuffle::from_env() {
+        Ok(flags) => flags,
+        Err(e) => e.exit(),
+    };
+    let mut pl = Playlist::new();
+    for path in flags.path {
+        pl.add_path(path);
+    }
+    for path in flags.read {
+        pl.read_path(path);
+    }
+    if flags.output.is_empty() {
+        for path in pl.shuffle().nested_iter() {
+            println!("{}", path.display());
         }
     }
-    // Checking the ending state for insertion of default behaviour (help etc.)
-    match state {
-        State::Middle => {
-            for f in files.shuffle().nested_iter() {
-                println!("{}", f.to_string_lossy());
+    for path in flags.output {
+        if let Some(parent) = path.parent() {
+            if let Err(e) = create_dir_all(parent) {
+                eprintln!("Could not create directories '{}': {}", parent.display(), e);
             }
         }
-        State::Input | State::Init => {
-            help();
+        match File::create(&path) {
+            Err(e) => {
+                eprintln!("Could not create output file '{}': {}", path.display(), e)
+            }
+            Ok(mut file) => {
+                for path in pl.shuffle().nested_iter() {
+                    if let Err(e) = writeln!(file, "{}", path.display()) {
+                        eprintln!("Could not write to output file '{}': {}", path.display(), e);
+                        break;
+                    }
+                    // TODO: Should relative paths be fixed?
+                }
+            }
         }
-        _ => {}
     }
 }
 
-// Print usage help
-fn help() {
-    let exe = args()
-        .next()
-        .unwrap_or_else(|| String::from("cargo run --"));
-    println!("Description:");
-    println!("  Create a shuffled playlist where songs from the same artist are spread out");
-    println!("  The artist names are taken from the files' ID3-tags.");
-    println!("  If a tag is missing then the artist is based on the filename (first directory not in the base path).");
-    println!("  The output paths will be global/local depending on the input paths.");
-    println!("\nUsage:\n  {} INPUTS -- OUTPUTS", &exe);
-    println!("\nArguments:");
-    println!("  INPUTS   are directories or .m3u/.csv/.txt files (\".\" if empty)");
-    println!("  OUTPUTS  are files (output to terminal if empty)");
-    println!("\nExamples:\n  {} ~/Music -- playlist.m3u\n  {} playlist1.m3u playlist2.m3u -- shuffled.m3u", &exe, &exe);
-}
+// // Print usage help
+// fn help() {
+//     let exe = args()
+//         .next()
+//         .unwrap_or_else(|| String::from("cargo run --"));
+//     println!("Description:");
+//     println!("  Create a shuffled playlist where songs from the same artist are spread out");
+//     println!("  The artist names are taken from the files' ID3-tags.");
+//     println!("  If a tag is missing then the artist is based on the filename (first directory not in the base path).");
+//     println!("  The output paths will be global/local depending on the input paths.");
+//     println!("\nUsage:\n  {} INPUTS -- OUTPUTS", &exe);
+//     println!("\nArguments:");
+//     println!("  INPUTS   are directories or .m3u/.csv/.txt files (\".\" if empty)");
+//     println!("  OUTPUTS  are files (output to terminal if empty)");
+//     println!("\nExamples:\n  {} ~/Music -- playlist.m3u\n  {} playlist1.m3u playlist2.m3u -- shuffled.m3u", &exe, &exe);
+// }
 
 #[cfg(test)]
 mod tests {

@@ -1,27 +1,29 @@
 # Artistic Shuffle
 
 When shuffling a playlist the goal is seldom *randomness*, but rather *variety*.
-This program aims to provide an alternative shuffle where clusters with songs from the
-same artist are avoided and where artists are regularly spread out throughout the playlist.
+This program aims to provide an alternative shuffle where no artist is repeated too often.
+Furthermore, favourite tracks (4/5 ★ and up) occur twice as often as the other tracks.
 
-The artist names are taken from the *artist* ID3-tag.
-If the tag is missing then the artist is based on the filename (first directory not in the base path).
+If the files are accessible, metadata is used for the artist names and ratings.
+If the metadata is missing, the artist is based on the path (assuming an `artist/album/track` directory stucture).
 
 ## Usage
 
-`artistic_shuffle INPUTS -- OUTPUTS`
+```artistic_shuffle INPUT -r READ -o OUTPUT```
 
-|Arguments:||
-|---|---|
-|INPUTS  | directories ("." if empty) or .m3u/.csv/.txt files |
-|OUTPUTS | files (output to terminal if empty) |
+| Argument | Description | Note |
+|---------:|-------------|------|
+| INPUT    | Files to add to the playlist (directories are recursively added). | Accepts multiple |
+| READ     | Read a list of files to add to the playlist (from files such as `.m3u`/`.csv`/`.txt`) | Accepts multiple |
+| OUTPUT   | Where to write the shuffled playlist (outputs to the terminal if missing). | Accepts multiple |
 
-The output paths will be global/local depending on the input paths.
+This tool will preserve relative paths.
 
 ## Examples
 
-`artistic_shuffle ~/Music -- playlist.m3u`  
-`artistic_shuffle playlist1.m3u playlist2.m3u -- shuffled.m3u`
+`artistic_shuffle --help`  
+`artistic_shuffle ~/Music -o playlist.m3u`  
+`artistic_shuffle favourite_song.mp3 -r playlist1.m3u -r playlist2.m3u -o shuffled.m3u`
 
 ## Building
 
